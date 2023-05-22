@@ -1,0 +1,11 @@
+[package]
+name = "wohnen"
+version = "0.1.0"
+license = "GPL-3.0"
+authors = ["Schmidt Cristian Hernán <schcriher@gmail.com>"]
+rust-version = "1.66"
+edition = "2021"
+publish = false
+
+[dependencies]
+fltk = { version = "^1.4", features = ["fltk-bundled"] }
