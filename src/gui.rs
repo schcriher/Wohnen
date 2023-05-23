@@ -1,10 +1,13 @@
+use crate::data::service::HouseService;
+
 use fltk::{
     app::{self, channel, App, Receiver, Scheme, Sender},
     browser::HoldBrowser,
     button::Button,
-    enums::{Color, Event, FrameType},
+    enums::{Color, Event, Font, FrameType},
     frame::Frame,
     group::Flex,
+    image::SvgImage,
     input::{FloatInput, Input, IntInput},
     menu::Choice,
     prelude::*,
@@ -25,47 +28,46 @@ enum Action {
 
 pub struct Gui {
     app: App,
-    dirty: bool,
+    dao: HouseService,
     inputs: HashMap<String, Box<dyn Any>>,
     sender: Sender<Action>,
     receiver: Receiver<Action>,
+    changed: bool,
 }
 
 impl Gui {
     pub fn new() -> Self {
         let app = App::default();
-        let dirty = false;
+        let dao = HouseService::new();
         let inputs = HashMap::new();
         let (sender, receiver) = channel::<Action>();
+        let changed = false;
         Gui {
             app,
-            dirty,
+            dao,
+
             inputs,
             sender,
             receiver,
+            changed,
         }
     }
 
-    fn init_styles(&self) {
+    fn build(&mut self) {
         app::set_scheme(Scheme::Gtk);
+        //app::background(255, 255, 255);
         app::set_background_color(170, 189, 206);
-        app::set_background2_color(255, 255, 255);
+        app::set_background2_color(200, 255, 200);
+        //app::foreground(20, 20, 20);
         app::set_foreground_color(0, 0, 0);
         app::set_selection_color(255, 160, 63);
         app::set_inactive_color(130, 149, 166);
         app::set_font_size(16);
-        //app::background(255, 255, 255);
-        //app::foreground(20, 20, 20);
-        //app::set_font_size(16);
         app::set_visible_focus(false);
-    }
-
-    fn build(&mut self) {
-        self.init_styles();
 
         let mut win = Window::default()
             .with_label("Wohnen - Schcriher")
-            .with_size(900, 500)
+            .with_size(900, 450)
             .center_screen();
 
         let margin_size = 10;
@@ -101,22 +103,27 @@ impl Gui {
         let mut right = Flex::default().column();
         right.set_margin(margin_size);
 
-        let title = Frame::default().with_label("Vivienda Seleccionada");
+        // https://docs.rs/fltk/latest/fltk/enums/struct.Font.html#method.set_font
+
+        let mut title = Frame::default().with_label("Vivienda Seleccionada");
+        title.set_label_font(Font::HelveticaBold);
         right.set_size(&title, button_height);
 
-        Frame::default();
+        let sep = Frame::default();
+        right.set_size(&sep, 5);
 
         self.create_input("id", "Número de registro");
-        self.create_input("type", "Tipo de vivienda");
+        self.create_input("kind", "Tipo de vivienda");
         self.create_input("street", "Calle");
         self.create_input("number", "Número");
         self.create_input("floor", "Piso");
         self.create_input("postcode", "Código postal");
         self.create_input("rooms", "Número de habitaciones");
         self.create_input("baths", "Número de baños");
-        self.create_input("area", "Superficie total");
+        self.create_input("area", "Superficie total (m²)");
 
-        Frame::default();
+        let sep = Frame::default();
+        right.set_size(&sep, 10);
 
         {
             let row = Flex::default().row();
@@ -132,9 +139,11 @@ impl Gui {
 
         main.end();
 
-        //win.resizable(&main);
         win.end();
         win.show();
+
+        let icon = SvgImage::load("assets/icon.svg").unwrap();
+        win.set_icon(Some(icon));
     }
 
     fn create_button(&self, caption: &str, action: Action) -> Button {
@@ -169,7 +178,7 @@ impl Gui {
                 input.deactivate();
                 obj = Box::new(input);
             }
-            "type" => {
+            "kind" => {
                 let mut choice = Choice::default();
                 choice.emit(self.sender, Action::Change);
                 choice.set_selection_color(Color::from_hex(0x1b1b1b));
@@ -200,6 +209,8 @@ impl Gui {
     pub fn run(&mut self) {
         self.build();
 
+        // https://docs.rs/fltk/latest/fltk/prelude/trait.WidgetBase.html#method.from_dyn_widget
+
         if let Some(widget_boxed) = self.inputs.get_mut("list") {
             if let Some(widget) = widget_boxed.downcast_mut::<HoldBrowser>() {
                 for n in 1..5 {
@@ -208,7 +219,7 @@ impl Gui {
             }
         }
 
-        if let Some(widget_boxed) = self.inputs.get_mut("type") {
+        if let Some(widget_boxed) = self.inputs.get_mut("kind") {
             if let Some(widget) = widget_boxed.downcast_mut::<Choice>() {
                 for n in 1..5 {
                     widget.add_choice(&format!("Vivienda Tipo {n}"));
@@ -235,7 +246,7 @@ impl Gui {
                 }
                 Some(Action::Change) => {
                     println!("Change");
-                    self.dirty = true;
+                    self.changed = true;
                 }
                 None => {}
             }

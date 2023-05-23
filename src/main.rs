@@ -1,4 +1,6 @@
+mod data;
 mod gui;
+
 use gui::Gui;
 
 fn main() {
