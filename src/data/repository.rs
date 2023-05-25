@@ -6,45 +6,62 @@ use std::env;
 use super::models::{House, NewHouse};
 use super::schema::houses::dsl::*;
 
-pub struct HouseRepository {
+pub struct RepositoryError;
+
+impl RepositoryError {
+    pub fn get(_: Error) -> Self {
+        RepositoryError
+    }
+}
+
+pub struct Repository {
     pub conn: SqliteConnection,
 }
 
-impl HouseRepository {
+impl Repository {
     pub fn new() -> Self {
         dotenv().ok();
 
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-        HouseRepository {
-            conn: SqliteConnection::establish(&database_url)
-                .expect(&format!("Error connecting to {}", database_url)),
+        Repository {
+            conn: SqliteConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url)),
         }
     }
 
-    pub fn find_all(&mut self) -> Result<Vec<House>, Error> {
-        houses.load::<House>(&mut self.conn)
+    pub fn find_all(&mut self) -> Result<Vec<House>, RepositoryError> {
+        houses
+            .order(id.asc())
+            .load::<House>(&mut self.conn)
+            .map_err(RepositoryError::get)
     }
 
-    pub fn create(&mut self, new_house: &NewHouse) -> Result<bool, Error> {
-        let rows = diesel::insert_into(houses)
-            .values(new_house)
-            .execute(&mut self.conn)?;
-        println!("{:?}", rows); //////////////////////////////////////////////////////////////////
-        Ok(rows > 0)
+    pub fn create(&mut self, new_house: &NewHouse) -> Result<House, RepositoryError> {
+        let result = diesel::insert_into(houses).values(new_house).execute(&mut self.conn);
+        if result == Ok(1) {
+            return houses
+                .order(id.desc())
+                .first(&mut self.conn)
+                .map_err(RepositoryError::get);
+        }
+        Err(RepositoryError)
     }
 
-    pub fn update(&mut self, house: House) -> Result<bool, Error> {
-        let rows = diesel::update(houses.find(house.id))
-            .set(house)
-            .execute(&mut self.conn)?;
-        println!("{:?}", rows); //////////////////////////////////////////////////////////////////
-        Ok(rows > 0)
+    pub fn update(&mut self, house: &House) -> Result<bool, RepositoryError> {
+        let result = diesel::update(houses.find(house.id)).set(house).execute(&mut self.conn);
+        if result == Ok(1) {
+            Ok(true)
+        } else {
+            Err(RepositoryError)
+        }
     }
 
-    pub fn delete(&mut self, h_id: i32) -> Result<bool, Error> {
-        let rows = diesel::delete(houses.find(h_id)).execute(&mut self.conn)?;
-        println!("{:?}", rows); //////////////////////////////////////////////////////////////////
-        Ok(rows > 0)
+    pub fn delete(&mut self, houseid: i32) -> Result<bool, RepositoryError> {
+        let result = diesel::delete(houses.find(houseid)).execute(&mut self.conn);
+        if result == Ok(1) {
+            Ok(true)
+        } else {
+            Err(RepositoryError)
+        }
     }
 }
