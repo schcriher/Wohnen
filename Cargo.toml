@@ -8,6 +8,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-fltk = { version = "1.4.3", features = ["fltk-bundled"] }
+fltk = { version = "1.4.4", features = ["fltk-bundled"] }
 diesel = { version = "2.0.4", features = ["sqlite"] }
 dotenvy = "0.15.7"
