@@ -1,4 +1,9 @@
+mod constants;
+mod wrapper;
+
 use super::base::{House, DAO, HOUSE_TYPES};
+use constants::{Action, NEW_HOUSE};
+use wrapper::Widget;
 
 use fltk::{
     app::{self, channel, App, Receiver, Scheme, Sender},
@@ -15,47 +20,40 @@ use fltk::{
 };
 
 use std::{
-    any::Any,
+    cell::RefCell,
     collections::{BTreeMap, HashMap},
+    fmt::Display,
+    rc::Rc,
 };
-
-#[derive(Clone, Copy)]
-enum Action {
-    Select,
-    Filter,
-    Create,
-    Update,
-    Delete,
-    Change,
-}
 
 pub struct Gui<'a> {
     app: App,
     dao: &'a mut dyn DAO,
-    inputs: HashMap<String, Box<dyn Any>>,
+    inputs: HashMap<String, Widget>,
+    idxhid: HashMap<String, i32>,
+    houses: BTreeMap<i32, Rc<RefCell<House>>>, // https://doc.rust-lang.org/book/ch15-05-interior-mutability.html
     sender: Sender<Action>,
     receiver: Receiver<Action>,
     changed: bool,
-    idx_to_hid: HashMap<i32, i32>,
-    houses: BTreeMap<i32, House>,
 }
 
 impl<'a> Gui<'a> {
     pub fn new(dao: &'a mut dyn DAO) -> Self {
         let app = App::default();
         let inputs = HashMap::new();
+        let idxhid = HashMap::new();
         let houses = BTreeMap::new();
-        let idx_to_hid = HashMap::new();
         let (sender, receiver) = channel::<Action>();
+        let changed = false;
         Gui {
             app,
             dao,
             inputs,
+            idxhid,
+            houses,
             sender,
             receiver,
-            changed: false,
-            idx_to_hid,
-            houses,
+            changed,
         }
     }
 
@@ -71,7 +69,7 @@ impl<'a> Gui<'a> {
 
         let mut win = Window::default()
             .with_label("Wohnen - Schcriher")
-            .with_size(900, 450)
+            .with_size(900, 460)
             .center_screen();
 
         let margin_size = 10;
@@ -94,10 +92,10 @@ impl<'a> Gui<'a> {
         }
 
         {
-            let mut selector = HoldBrowser::default();
-            selector.set_selection_color(Color::from_hex(0x1b1b1b));
-            selector.emit(self.sender, Action::Select);
-            self.inputs.insert("list".to_string(), Box::new(selector));
+            let mut select = HoldBrowser::default();
+            select.set_selection_color(Color::from_hex(0x1b1b1b));
+            select.emit(self.sender, Action::Select);
+            self.inputs.insert("select".to_string(), Widget::Browser(select));
         }
 
         left.end();
@@ -144,13 +142,13 @@ impl<'a> Gui<'a> {
         win.end();
         win.show();
 
-        let icon = SvgImage::load("assets/icon.svg").unwrap();
+        let icon = include_bytes!("../assets/icon.svg");
+        let icon = SvgImage::from_data(std::str::from_utf8(icon).unwrap()).unwrap();
         win.set_icon(Some(icon));
     }
 
-    fn create_button(&self, caption: &str, action: Action) -> Button {
+    fn create_button(&self, caption: &str, action: Action) {
         let mut button = Button::default().with_label(caption);
-
         button.set_color(Color::from_rgb(225, 225, 225));
         button.emit(self.sender, action);
         button.handle(move |b, ev| match ev {
@@ -166,261 +164,136 @@ impl<'a> Gui<'a> {
             }
             _ => false,
         });
-        button
     }
 
     fn create_input(&mut self, key: &str, text: &str) {
         let row = Flex::default().row();
         Frame::default().with_label(text);
-        let obj: Box<dyn Any>;
         let sender = self.sender.clone();
-        match key {
+        let widget = match key {
             "id" => {
                 let mut input = Input::default();
                 input.set_frame(FrameType::FlatBox);
                 input.set_readonly(true);
                 input.deactivate();
-                obj = Box::new(input);
+                Widget::TInput(input)
             }
             "kind" => {
-                let mut choice = Choice::default();
-                choice.set_selection_color(Color::from_hex(0x1b1b1b));
-                choice.emit(self.sender, Action::Change);
-                obj = Box::new(choice);
+                let mut kind = Choice::default();
+                kind.set_selection_color(Color::from_hex(0x1b1b1b));
+                kind.emit(sender, Action::Change);
+                Widget::Choice(kind)
             }
             "street" | "postcode" => {
                 let mut input = Input::default();
+                input.set_tooltip("Puede ingresar texto y números");
                 input.set_trigger(CallbackTrigger::Changed);
                 input.set_callback(move |_| sender.send(Action::Change));
-                obj = Box::new(input);
+                Widget::TInput(input)
             }
             "area" => {
                 let mut input = FloatInput::default();
-                input.set_tooltip("Ingrese un número con o sin coma");
+                input.set_tooltip("Puede ingresar números decimales");
                 input.set_trigger(CallbackTrigger::Changed);
                 input.set_callback(move |_| sender.send(Action::Change));
-                obj = Box::new(input);
+                Widget::FInput(input)
             }
             _ => {
                 let mut input = IntInput::default();
-                input.set_tooltip("Ingrese un número entero");
+                input.set_tooltip("Puede ingresar solamente números enteros");
                 input.set_trigger(CallbackTrigger::Changed);
                 input.set_callback(move |_| sender.send(Action::Change));
-                obj = Box::new(input);
+                Widget::IInput(input)
             }
-        }
+        };
         row.end();
-        self.inputs.insert(key.to_string(), obj);
+        self.inputs.insert(key.to_string(), widget);
     }
 
-    fn fill_browser(&mut self) {
+    fn get_widget(&self, key: &str) -> &Widget {
+        self.inputs.get(key).unwrap()
+    }
+
+    fn get_widget_mut(&mut self, key: &str) -> &mut Widget {
+        self.inputs.get_mut(key).unwrap()
+    }
+
+    fn get_value(&self, key: &str) -> String {
+        self.get_widget(key).get()
+    }
+
+    fn set_value<U: Display>(&mut self, key: &str, value: U) {
+        self.get_widget_mut(key).set(value);
+    }
+
+    fn add_value(&mut self, key: &str, value: &str) {
+        self.get_widget_mut(key).add(value);
+    }
+
+    fn fill_select(&mut self) {
         if let Ok(houses) = self.dao.get_houses() {
             for house in houses {
-                self.houses.insert(house.id, house);
+                self.houses.insert(house.id, Rc::new(RefCell::new(house)));
             }
         }
-
-        let browser = self
-            .inputs
-            .get_mut("list")
-            .unwrap()
-            .downcast_mut::<HoldBrowser>()
-            .unwrap();
-
+        let select = self.inputs.get_mut("select").unwrap();
         for (index, house) in self.houses.values().enumerate() {
-            browser.add(&format!("Vivienda {:>02}: {} ({})", house.id, house.street, house.kind));
-            self.idx_to_hid.insert((index + 1) as i32, house.id);
+            let house = house.borrow();
+            select.add(&format!("Vivienda {:>02}: {} ({})", house.id, house.street, house.kind));
+            self.idxhid.insert((index + 1).to_string(), house.id);
         }
     }
 
-    fn fill_choice(&mut self) {
-        let choice = self.inputs.get_mut("kind").unwrap().downcast_mut::<Choice>().unwrap();
+    fn fill_kind(&mut self) {
+        let kind = self.get_widget_mut("kind");
         for value in HOUSE_TYPES {
-            choice.add_choice(value);
+            kind.add(value);
         }
+    }
+
+    fn set_new_house(&mut self) {
+        self.set_value("id", NEW_HOUSE);
+        self.add_value("select", NEW_HOUSE);
+        self.set_value("select", i32::MAX);
     }
 
     fn clear(&mut self) {
-        {
-            let widget = self.inputs.get_mut("id").unwrap().downcast_mut::<Input>().unwrap();
-            widget.set_value("«nuevo»");
-        }
-
-        {
-            let widget = self.inputs.get_mut("kind").unwrap().downcast_mut::<Choice>().unwrap();
-            widget.set_value(-1);
-        }
-
-        {
-            let widget = self.inputs.get_mut("street").unwrap().downcast_mut::<Input>().unwrap();
-            widget.set_value("");
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("number")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value("");
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("floor")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value("");
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("postcode")
-                .unwrap()
-                .downcast_mut::<Input>()
-                .unwrap();
-            widget.set_value("");
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("rooms")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value("");
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("baths")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value("");
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("area")
-                .unwrap()
-                .downcast_mut::<FloatInput>()
-                .unwrap();
-            widget.set_value("");
+        for widget in self.inputs.values_mut() {
+            widget.set("");
         }
     }
 
     fn show(&mut self) {
-        let browser = self
-            .inputs
-            .get_mut("list")
-            .unwrap()
-            .downcast_mut::<HoldBrowser>()
-            .unwrap();
-        let idx = browser.value();
-        if idx < 1 {
-            return;
-        }
-
-        let hid = self.idx_to_hid.get(&idx).unwrap();
-        let house = self.houses.get(&hid).unwrap().clone();
-
-        {
-            let widget = self.inputs.get_mut("id").unwrap().downcast_mut::<Input>().unwrap();
-            widget.set_value(&format!("{}", house.id));
-        }
-
-        {
-            let widget = self.inputs.get_mut("kind").unwrap().downcast_mut::<Choice>().unwrap();
-            let index = HOUSE_TYPES.iter().position(|&r| r == house.kind).unwrap();
-            println!("index: {index}");
-            widget.set_value(index as i32);
-        }
-
-        {
-            let widget = self.inputs.get_mut("street").unwrap().downcast_mut::<Input>().unwrap();
-            widget.set_value(&format!("{}", house.street));
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("number")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value(&format!("{}", house.number));
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("floor")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value(&format!("{}", house.floor));
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("postcode")
-                .unwrap()
-                .downcast_mut::<Input>()
-                .unwrap();
-            widget.set_value(&format!("{}", house.postcode));
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("rooms")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value(&format!("{}", house.rooms));
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("baths")
-                .unwrap()
-                .downcast_mut::<IntInput>()
-                .unwrap();
-            widget.set_value(&format!("{}", house.baths));
-        }
-
-        {
-            let widget = self
-                .inputs
-                .get_mut("area")
-                .unwrap()
-                .downcast_mut::<FloatInput>()
-                .unwrap();
-            widget.set_value(&format!("{}", house.area));
+        let idx = self.get_value("select");
+        if let Some(hid) = self.idxhid.get(&idx) {
+            if let Some(house) = self.houses.get(&hid) {
+                let house = house.to_owned();
+                let house = house.borrow();
+                self.set_value("id", &house.id);
+                self.set_value("kind", HOUSE_TYPES.iter().position(|&r| r == house.kind).unwrap());
+                self.set_value("street", &house.street);
+                self.set_value("number", &house.number);
+                self.set_value("floor", &house.floor);
+                self.set_value("postcode", &house.postcode);
+                self.set_value("rooms", &house.rooms);
+                self.set_value("baths", &house.baths);
+                self.set_value("area", &house.area);
+            }
         }
     }
 
     pub fn run(&mut self) {
         self.build();
 
-        self.fill_browser();
-        self.fill_choice();
+        self.fill_select();
+        self.fill_kind();
 
         while self.app.wait() {
             match self.receiver.recv() {
                 Some(Action::Create) => {
                     println!("Create");
                     self.clear();
+                    self.set_new_house();
                 }
                 Some(Action::Update) => {
                     println!("Update");
@@ -431,7 +304,17 @@ impl<'a> Gui<'a> {
                 }
                 Some(Action::Select) => {
                     println!("Select");
-                    self.show();
+                    let input: &mut Widget = self.get_widget_mut("select");
+                    let pos = input.get();
+                    let last = input.get_size();
+                    if pos != last && input.get_text(&last) == NEW_HOUSE {
+                        input.del(&last);
+                    }
+                    if pos != "0" {
+                        self.show();
+                    } else {
+                        self.clear();
+                    }
                 }
                 Some(Action::Filter) => {
                     println!("Filter");
