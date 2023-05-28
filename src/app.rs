@@ -17,6 +17,7 @@ use fltk::{
     app::{self, channel, App, Receiver, Scheme, Sender},
     browser::HoldBrowser,
     button::Button,
+    dialog,
     enums::{CallbackTrigger, Color, Event, Font, FrameType},
     frame::Frame,
     group::Flex,
@@ -29,13 +30,13 @@ use fltk::{
 
 pub const NEW_HOUSE: &str = "«nuevo»";
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum Action {
     Select,
     Filter,
     Unfilter,
-    Create,
-    Update,
+    New,
+    Save,
     Delete,
     Change,
     Close,
@@ -45,13 +46,13 @@ pub struct Gui<'a> {
     app: App,
     win: DoubleWindow,
     dao: &'a mut dyn DAO,
+    sender: Sender<Action>,
+    receiver: Receiver<Action>,
     inputs: HashMap<String, Widget>,
     idxhid: HashMap<String, i32>,
     houses: BTreeMap<i32, Rc<RefCell<House>>>, // https://doc.rust-lang.org/book/ch15-05-interior-mutability.html
-    sender: Sender<Action>,
-    receiver: Receiver<Action>,
-    changed: bool,
-    filtering: bool,
+    buttons: HashMap<Action, Button>,
+    hid_select: i32,
 }
 
 impl<'a> Gui<'a> {
@@ -66,8 +67,8 @@ impl<'a> Gui<'a> {
             inputs: HashMap::new(),
             idxhid: HashMap::new(),
             houses: BTreeMap::new(),
-            changed: false,
-            filtering: false,
+            buttons: HashMap::new(),
+            hid_select: -1,
         }
     }
 
@@ -86,7 +87,18 @@ impl<'a> Gui<'a> {
         let (sx, sy, sw, sh) = app::screen_work_area(self.win.screen_num());
         let w = 900;
         let h = 460;
-        ///////////////////////////////////////////////////////////// TODO verificar sw<>w y sh<>h
+
+        if w > sw || h > sh {
+            let x = sx + (sw - 420) / 2;
+            let y = sy + (sh - 150) / 2;
+            let line1 = format!("Esta aplicación fue diseñada para una");
+            let line2 = format!("ventana de {w}x{h} píxeles como mínimo");
+            let error = format!("𝐄𝐑𝐑𝐎𝐑\n{line1}\n{line2}");
+            dialog::beep(dialog::BeepType::Error);
+            dialog::alert(x, y, &error);
+            panic!("{error}");
+        }
+
         let x = sx + (sw - w) / 2;
         let y = sy + (sh - h) / 2;
         self.win.set_size(w, h);
@@ -107,7 +119,7 @@ impl<'a> Gui<'a> {
 
         {
             let row = Flex::default().row();
-            self.create_button("Nuevo", Action::Create);
+            self.create_button("Nuevo", Action::New);
             self.create_button("Filtrar", Action::Filter);
             self.create_button("Quitar Filtro", Action::Unfilter);
             row.end();
@@ -130,6 +142,7 @@ impl<'a> Gui<'a> {
 
         let mut title = Frame::default().with_label("Vivienda Seleccionada");
         title.set_label_font(Font::HelveticaBold);
+        title.set_label_size(22);
         right.set_size(&title, button_height);
 
         let sep = Frame::default();
@@ -151,7 +164,7 @@ impl<'a> Gui<'a> {
         {
             let row = Flex::default().row();
             self.create_button("Borrar", Action::Delete);
-            self.create_button("Guardar", Action::Update);
+            self.create_button("Guardar", Action::Save);
             self.create_button("Salir", Action::Close);
             row.end();
             right.set_size(&row, button_height);
@@ -180,13 +193,17 @@ impl<'a> Gui<'a> {
         (x + offset_x, y + offset_y)
     }
 
-    fn create_button(&self, caption: &str, action: Action) {
+    fn create_button(&mut self, caption: &str, action: Action) {
         let mut button = Button::default().with_label(caption);
         button.set_color(Color::from_rgb(225, 225, 225));
         button.emit(self.sender, action);
         button.handle(move |b, ev| match ev {
             Event::Enter => {
-                b.set_color(Color::from_rgb(150, 150, 150));
+                if b.active() {
+                    b.set_color(Color::from_rgb(150, 150, 150));
+                } else {
+                    b.set_color(Color::from_rgb(225, 225, 225));
+                }
                 b.redraw();
                 true
             }
@@ -197,6 +214,7 @@ impl<'a> Gui<'a> {
             }
             _ => false,
         });
+        self.buttons.insert(action, button);
     }
 
     fn create_input(&mut self, key: &str, text: &str) {
@@ -263,12 +281,16 @@ impl<'a> Gui<'a> {
     }
 
     fn fill_select(&mut self, filter: Filter) {
-        let select = self.inputs.get_mut("select").unwrap();
-
-        select.clear();
+        self.clear_house();
         self.houses.clear();
+        self.idxhid.clear();
 
+        let select = self.inputs.get_mut("select").unwrap();
+        select.clear();
+
+        let mut max = 0;
         if let Ok(houses) = self.dao.get_houses() {
+            max = houses.len();
             for house in houses {
                 if filter.valid(&house) {
                     self.houses.insert(house.id, Rc::new(RefCell::new(house)));
@@ -279,8 +301,18 @@ impl<'a> Gui<'a> {
         for (index, house) in self.houses.values().enumerate() {
             let house = house.borrow();
             select.add(&format!("Vivienda {:>02}: {} ({})", house.id, house.street, house.kind));
-            self.idxhid.insert((index + 1).to_string(), house.id);
+            let idx = (index + 1).to_string();
+            self.idxhid.insert(idx.clone(), house.id);
+
+            if house.id == self.hid_select {
+                select.set(idx);
+            }
         }
+
+        let selected = select.get() != "0";
+        self.set_button_status(Action::Delete, selected);
+        self.set_button_status(Action::Unfilter, self.houses.len() < max);
+        self.show_house();
     }
 
     fn fill_kind(&mut self) {
@@ -296,13 +328,14 @@ impl<'a> Gui<'a> {
         self.set_value("select", i32::MAX);
     }
 
-    fn clear(&mut self) {
+    fn clear_house(&mut self) {
         for widget in self.inputs.values_mut() {
             widget.set("");
         }
     }
 
-    fn show(&mut self) {
+    fn show_house(&mut self) {
+        self.hid_select = -1;
         let idx = self.get_value("select");
         if let Some(hid) = self.idxhid.get(&idx) {
             if let Some(house) = self.houses.get(&hid) {
@@ -317,39 +350,58 @@ impl<'a> Gui<'a> {
                 self.set_value("rooms", &house.rooms);
                 self.set_value("baths", &house.baths);
                 self.set_value("area", &house.area);
+                self.hid_select = house.id;
             }
         }
     }
 
+    fn set_button_status(&mut self, key: Action, value: bool) {
+        let button = self.buttons.get_mut(&key).unwrap();
+        if value {
+            button.activate();
+        } else {
+            button.deactivate();
+        }
+    }
+
+    fn set_buttons_new_save_delete(&mut self, new: bool, save: bool, delete: bool) {
+        self.set_button_status(Action::New, new);
+        self.set_button_status(Action::Save, save);
+        self.set_button_status(Action::Delete, delete);
+    }
+
+    fn unsaved_changes(&self) -> bool {
+        let button = self.buttons.get(&Action::Save).unwrap();
+        button.active()
+    }
+
     pub fn run(&mut self) {
         self.build();
-        self.fill_select(Filter::default());
         self.fill_kind();
+        self.fill_select(Filter::default());
+        self.set_buttons_new_save_delete(true, false, false);
         self.win.show();
 
         while self.app.wait() {
             if let Some(action) = self.receiver.recv() {
                 match action {
-                    Action::Create => {
-                        println!("Create");
-                        self.clear();
+                    Action::New => {
+                        self.clear_house();
                         self.set_new_house();
-                        self.changed = false;
+                        self.set_buttons_new_save_delete(false, false, false);
                     }
 
-                    Action::Update => {
-                        println!("Update");
-                        self.changed = false;
+                    Action::Save => {
+                        self.set_buttons_new_save_delete(true, false, true);
                     }
 
                     Action::Delete => {
-                        println!("Delete");
-                        self.changed = false;
+                        self.clear_house();
+                        self.set_buttons_new_save_delete(true, false, false);
                     }
 
                     Action::Select => {
-                        println!("Select");
-                        if self.changed {
+                        if self.unsaved_changes() {
                             // TODO: ask for save the changes
                             println!("  Changed!!!");
                         }
@@ -360,17 +412,19 @@ impl<'a> Gui<'a> {
                         if pos != last && input.get_text(&last) == NEW_HOUSE {
                             input.del(&last);
                         }
-                        if pos != "0" {
-                            self.show();
+                        let selected = pos != "0";
+                        if selected {
+                            self.show_house();
                         } else {
-                            self.clear();
+                            self.clear_house();
                         }
+                        self.set_buttons_new_save_delete(true, false, selected);
                     }
 
                     Action::Filter => {
-                        println!("Filter");
-
-                        // TODO: boton filtro queda oscuro
+                        let button = self.buttons.get_mut(&Action::Filter).unwrap();
+                        button.set_color(Color::from_rgb(225, 225, 225));
+                        button.redraw();
 
                         self.win.deactivate();
 
@@ -381,29 +435,25 @@ impl<'a> Gui<'a> {
                         let mut dialog = FilterDialog::new(x, y, width, height);
                         let filter = dialog.run();
 
-                        self.fill_select(filter);
-                        self.win.activate();
+                        self.set_buttons_new_save_delete(true, false, false);
+                        if let Some(filter) = filter {
+                            self.fill_select(filter); // update delete button
+                        }
 
-                        self.filtering = true;
-                        // TODO: desactivar boton de desfiltrar
-                        //       si filtro sin elejir nada es como desfiltrar
+                        self.win.activate();
                     }
 
                     Action::Unfilter => {
-                        println!("Unfilter");
-                        self.fill_select(Filter::default());
-                        self.filtering = false;
-                        // TODO: desactivar boton de desfiltrar
+                        self.set_buttons_new_save_delete(true, false, false);
+                        self.fill_select(Filter::default()); // update delete button
                     }
 
                     Action::Change => {
-                        println!("Change");
-                        self.changed = true;
+                        self.set_button_status(Action::Save, true);
                     }
 
                     Action::Close => {
-                        println!("Close");
-                        if self.changed {
+                        if self.unsaved_changes() {
                             // TODO: ask for save the changes
                             println!("  Changed!!!");
                         }

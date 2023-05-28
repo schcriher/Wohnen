@@ -4,7 +4,7 @@ use crate::base::{Filter, Range, HOUSE_TYPES};
 use std::collections::HashMap;
 
 use fltk::{
-    app,
+    app::{self, channel, Receiver, Sender},
     button::Button,
     enums::{Color, Event, Font, FrameType},
     frame::Frame,
@@ -20,13 +20,18 @@ pub const ALL_TYPE: &str = "«Todos los tipos»";
 pub struct FilterDialog {
     window: DoubleWindow,
     inputs: HashMap<String, Vec<Widget>>,
+    sender: Sender<bool>,
+    receiver: Receiver<bool>,
 }
 
 impl FilterDialog {
     pub fn new(x: i32, y: i32, w: i32, h: i32) -> Self {
+        let (sender, receiver) = channel::<bool>();
         Self {
             window: DoubleWindow::new(x, y, w, h, "Filtrar"),
             inputs: HashMap::new(),
+            sender,
+            receiver,
         }
     }
 
@@ -48,6 +53,7 @@ impl FilterDialog {
         let mut filters = Flex::default_fill().row();
         filters.set_margin(margin_size);
 
+        // TODO texto explicativo de que son los min y max y el tema del texto
         {
             let left = Flex::default().column();
 
@@ -99,8 +105,8 @@ impl FilterDialog {
         let row = Flex::default().row();
         Frame::default();
         Frame::default();
-        Frame::default().with_label("Mínimo\n[ 0 ]").set_label_size(12);
-        Frame::default().with_label("Máximo\n[ max ]").set_label_size(12);
+        Frame::default().with_label("Mínimo").set_label_size(12);
+        Frame::default().with_label("Máximo").set_label_size(12);
         row.end();
     }
 
@@ -166,10 +172,13 @@ impl FilterDialog {
             }
             _ => false,
         });
+        let signal = caption == "Aceptar";
         button.set_callback({
             let mut win = self.window.clone();
+            let sender = self.sender.clone();
             move |_| {
                 win.hide();
+                sender.send(signal);
             }
         });
     }
@@ -223,13 +232,17 @@ impl FilterDialog {
         filter
     }
 
-    pub fn run(&mut self) -> Filter {
+    pub fn run(&mut self) -> Option<Filter> {
         self.build();
         self.fill_kind();
         self.window.show();
         while self.window.shown() {
             app::wait();
         }
-        self.get_filter()
+        if self.receiver.recv().unwrap_or(false) {
+            Some(self.get_filter())
+        } else {
+            None
+        }
     }
 }
