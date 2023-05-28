@@ -1,9 +1,17 @@
-mod constants;
+mod dialogs;
 mod wrapper;
 
-use super::base::{House, DAO, HOUSE_TYPES};
-use constants::{Action, NEW_HOUSE};
+use crate::base::{Filter, House, DAO, HOUSE_TYPES};
+
+use dialogs::FilterDialog;
 use wrapper::Widget;
+
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+    fmt::Display,
+    rc::Rc,
+};
 
 use fltk::{
     app::{self, channel, App, Receiver, Scheme, Sender},
@@ -16,18 +24,26 @@ use fltk::{
     input::{FloatInput, Input, IntInput},
     menu::Choice,
     prelude::*,
-    window::Window,
+    window::DoubleWindow,
 };
 
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    fmt::Display,
-    rc::Rc,
-};
+pub const NEW_HOUSE: &str = "«nuevo»";
+
+#[derive(Debug, Clone, Copy)]
+pub enum Action {
+    Select,
+    Filter,
+    Unfilter,
+    Create,
+    Update,
+    Delete,
+    Change,
+    Close,
+}
 
 pub struct Gui<'a> {
     app: App,
+    win: DoubleWindow,
     dao: &'a mut dyn DAO,
     inputs: HashMap<String, Widget>,
     idxhid: HashMap<String, i32>,
@@ -35,25 +51,23 @@ pub struct Gui<'a> {
     sender: Sender<Action>,
     receiver: Receiver<Action>,
     changed: bool,
+    filtering: bool,
 }
 
 impl<'a> Gui<'a> {
     pub fn new(dao: &'a mut dyn DAO) -> Self {
-        let app = App::default();
-        let inputs = HashMap::new();
-        let idxhid = HashMap::new();
-        let houses = BTreeMap::new();
         let (sender, receiver) = channel::<Action>();
-        let changed = false;
         Gui {
-            app,
             dao,
-            inputs,
-            idxhid,
-            houses,
             sender,
             receiver,
-            changed,
+            app: App::default(),
+            win: DoubleWindow::default(),
+            inputs: HashMap::new(),
+            idxhid: HashMap::new(),
+            houses: BTreeMap::new(),
+            changed: false,
+            filtering: false,
         }
     }
 
@@ -67,10 +81,18 @@ impl<'a> Gui<'a> {
         app::set_font_size(16);
         app::set_visible_focus(false);
 
-        let mut win = Window::default()
-            .with_label("Wohnen - Schcriher")
-            .with_size(900, 460)
-            .center_screen();
+        self.win.set_label("Wohnen - Schcriher");
+
+        let (sx, sy, sw, sh) = app::screen_work_area(self.win.screen_num());
+        let w = 900;
+        let h = 460;
+        ///////////////////////////////////////////////////////////// TODO verificar sw<>w y sh<>h
+        let x = sx + (sw - w) / 2;
+        let y = sy + (sh - h) / 2;
+        self.win.set_size(w, h);
+        self.win.set_pos(x, y);
+
+        self.win.begin();
 
         let margin_size = 10;
         let button_height = 36;
@@ -87,6 +109,7 @@ impl<'a> Gui<'a> {
             let row = Flex::default().row();
             self.create_button("Nuevo", Action::Create);
             self.create_button("Filtrar", Action::Filter);
+            self.create_button("Quitar Filtro", Action::Unfilter);
             row.end();
             left.set_size(&row, button_height);
         }
@@ -129,6 +152,7 @@ impl<'a> Gui<'a> {
             let row = Flex::default().row();
             self.create_button("Borrar", Action::Delete);
             self.create_button("Guardar", Action::Update);
+            self.create_button("Salir", Action::Close);
             row.end();
             right.set_size(&row, button_height);
         }
@@ -139,12 +163,21 @@ impl<'a> Gui<'a> {
 
         main.end();
 
-        win.end();
-        win.show();
+        self.win.end();
 
         let icon = include_bytes!("../assets/icon.svg");
         let icon = SvgImage::from_data(std::str::from_utf8(icon).unwrap()).unwrap();
-        win.set_icon(Some(icon));
+        self.win.set_icon(Some(icon));
+    }
+
+    fn get_pos(&self, width: i32, height: i32) -> (i32, i32) {
+        let w = self.win.w();
+        let h = self.win.h();
+        let x = self.win.x();
+        let y = self.win.y();
+        let offset_x = (w - width) / 2;
+        let offset_y = (h - height) / 2;
+        (x + offset_x, y + offset_y)
     }
 
     fn create_button(&self, caption: &str, action: Action) {
@@ -169,7 +202,6 @@ impl<'a> Gui<'a> {
     fn create_input(&mut self, key: &str, text: &str) {
         let row = Flex::default().row();
         Frame::default().with_label(text);
-        let sender = self.sender.clone();
         let widget = match key {
             "id" => {
                 let mut input = Input::default();
@@ -181,28 +213,28 @@ impl<'a> Gui<'a> {
             "kind" => {
                 let mut kind = Choice::default();
                 kind.set_selection_color(Color::from_hex(0x1b1b1b));
-                kind.emit(sender, Action::Change);
+                kind.emit(self.sender, Action::Change);
                 Widget::Choice(kind)
             }
-            "street" | "postcode" => {
+            "street" => {
                 let mut input = Input::default();
-                input.set_tooltip("Puede ingresar texto y números");
+                input.set_tooltip("Ingrese la dirección de la vivienda");
                 input.set_trigger(CallbackTrigger::Changed);
-                input.set_callback(move |_| sender.send(Action::Change));
+                input.emit(self.sender, Action::Change);
                 Widget::TInput(input)
             }
             "area" => {
                 let mut input = FloatInput::default();
-                input.set_tooltip("Puede ingresar números decimales");
+                input.set_tooltip("Ingresar los metros cuadrados, puede ser decimales");
                 input.set_trigger(CallbackTrigger::Changed);
-                input.set_callback(move |_| sender.send(Action::Change));
+                input.emit(self.sender, Action::Change);
                 Widget::FInput(input)
             }
             _ => {
                 let mut input = IntInput::default();
-                input.set_tooltip("Puede ingresar solamente números enteros");
+                input.set_tooltip("Ingrese solamente números enteros");
                 input.set_trigger(CallbackTrigger::Changed);
-                input.set_callback(move |_| sender.send(Action::Change));
+                input.emit(self.sender, Action::Change);
                 Widget::IInput(input)
             }
         };
@@ -230,13 +262,20 @@ impl<'a> Gui<'a> {
         self.get_widget_mut(key).add(value);
     }
 
-    fn fill_select(&mut self) {
+    fn fill_select(&mut self, filter: Filter) {
+        let select = self.inputs.get_mut("select").unwrap();
+
+        select.clear();
+        self.houses.clear();
+
         if let Ok(houses) = self.dao.get_houses() {
             for house in houses {
-                self.houses.insert(house.id, Rc::new(RefCell::new(house)));
+                if filter.valid(&house) {
+                    self.houses.insert(house.id, Rc::new(RefCell::new(house)));
+                }
             }
         }
-        let select = self.inputs.get_mut("select").unwrap();
+
         for (index, house) in self.houses.values().enumerate() {
             let house = house.borrow();
             select.add(&format!("Vivienda {:>02}: {} ({})", house.id, house.street, house.kind));
@@ -284,46 +323,93 @@ impl<'a> Gui<'a> {
 
     pub fn run(&mut self) {
         self.build();
-
-        self.fill_select();
+        self.fill_select(Filter::default());
         self.fill_kind();
+        self.win.show();
 
         while self.app.wait() {
-            match self.receiver.recv() {
-                Some(Action::Create) => {
-                    println!("Create");
-                    self.clear();
-                    self.set_new_house();
-                }
-                Some(Action::Update) => {
-                    println!("Update");
-                    self.changed = false;
-                }
-                Some(Action::Delete) => {
-                    println!("Delete");
-                }
-                Some(Action::Select) => {
-                    println!("Select");
-                    let input: &mut Widget = self.get_widget_mut("select");
-                    let pos = input.get();
-                    let last = input.get_size();
-                    if pos != last && input.get_text(&last) == NEW_HOUSE {
-                        input.del(&last);
-                    }
-                    if pos != "0" {
-                        self.show();
-                    } else {
+            if let Some(action) = self.receiver.recv() {
+                match action {
+                    Action::Create => {
+                        println!("Create");
                         self.clear();
+                        self.set_new_house();
+                        self.changed = false;
+                    }
+
+                    Action::Update => {
+                        println!("Update");
+                        self.changed = false;
+                    }
+
+                    Action::Delete => {
+                        println!("Delete");
+                        self.changed = false;
+                    }
+
+                    Action::Select => {
+                        println!("Select");
+                        if self.changed {
+                            // TODO: ask for save the changes
+                            println!("  Changed!!!");
+                        }
+
+                        let input: &mut Widget = self.get_widget_mut("select");
+                        let pos = input.get();
+                        let last = input.get_size();
+                        if pos != last && input.get_text(&last) == NEW_HOUSE {
+                            input.del(&last);
+                        }
+                        if pos != "0" {
+                            self.show();
+                        } else {
+                            self.clear();
+                        }
+                    }
+
+                    Action::Filter => {
+                        println!("Filter");
+
+                        // TODO: boton filtro queda oscuro
+
+                        self.win.deactivate();
+
+                        let width = 800;
+                        let height = 330;
+                        let (x, y) = self.get_pos(width, height);
+
+                        let mut dialog = FilterDialog::new(x, y, width, height);
+                        let filter = dialog.run();
+
+                        self.fill_select(filter);
+                        self.win.activate();
+
+                        self.filtering = true;
+                        // TODO: desactivar boton de desfiltrar
+                        //       si filtro sin elejir nada es como desfiltrar
+                    }
+
+                    Action::Unfilter => {
+                        println!("Unfilter");
+                        self.fill_select(Filter::default());
+                        self.filtering = false;
+                        // TODO: desactivar boton de desfiltrar
+                    }
+
+                    Action::Change => {
+                        println!("Change");
+                        self.changed = true;
+                    }
+
+                    Action::Close => {
+                        println!("Close");
+                        if self.changed {
+                            // TODO: ask for save the changes
+                            println!("  Changed!!!");
+                        }
+                        self.app.quit();
                     }
                 }
-                Some(Action::Filter) => {
-                    println!("Filter");
-                }
-                Some(Action::Change) => {
-                    println!("Change");
-                    self.changed = true;
-                }
-                None => {}
             }
         }
     }

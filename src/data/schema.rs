@@ -7,7 +7,7 @@ diesel::table! {
         street -> Text,
         number -> Integer,
         floor -> Integer,
-        postcode -> Text,
+        postcode -> Integer,
         rooms -> Integer,
         baths -> Integer,
         area -> Float,

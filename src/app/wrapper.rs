@@ -9,6 +9,7 @@ use fltk::{
 
 // https://users.rust-lang.org/t/how-to-create-a-vector-with-different-types-of-gui-widgets/93414/2
 
+#[derive(Debug)]
 pub enum Widget {
     TInput(Input),
     IInput(IntInput),
@@ -28,7 +29,7 @@ impl Widget {
         }
     }
 
-    pub fn set<U: Display>(&mut self, value: U) -> &Self {
+    pub fn set<T: Display>(&mut self, value: T) -> &Self {
         let value = value.to_string();
         match self {
             Self::TInput(w) => w.set_value(&value),
@@ -50,13 +51,22 @@ impl Widget {
         self
     }
 
+    pub fn clear(&mut self) -> &Self {
+        match self {
+            Self::Choice(w) => w.clear(),
+            Self::Browser(w) => w.clear(),
+            _ => panic!("unsupported operation"),
+        }
+        self
+    }
+
     pub fn add(&mut self, value: &str) -> &Self {
         match self {
             Self::Choice(w) => {
-                w.add_choice(&value);
+                w.add_choice(value);
             }
             Self::Browser(w) => {
-                w.add(&value);
+                w.add(value);
             }
             _ => panic!("unsupported operation"),
         }
