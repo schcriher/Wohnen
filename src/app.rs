@@ -500,7 +500,7 @@ impl<'a> Gui<'a> {
                         self.win.deactivate();
 
                         let width = 800;
-                        let height = 330;
+                        let height = 360;
                         let (x, y) = self.get_pos(width, height);
 
                         let mut dialog = FilterDialog::new(x, y, width, height);

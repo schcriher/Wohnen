@@ -46,42 +46,51 @@ impl FilterDialog {
         let mut main = Flex::default_fill().column();
         main.set_margin(margin_size);
 
-        let mut title = Frame::default().with_label("Seleccione los parámetros para filtrar");
+        let mut title = Frame::default().with_label("Seleccione los parámetros para filtrar las viviendas");
         title.set_label_font(Font::HelveticaBold);
+        title.set_label_size(22);
         main.set_size(&title, button_height);
 
-        let mut filters = Flex::default_fill().row();
-        filters.set_margin(margin_size);
+        let line1 = "El texto se buscar por similitud y los números dentro del rango indicado";
+        let line2 = "Si no se especifica un mínimo se asume 0 y si no se especifica un máximo se asumen todos";
+        let mut lines = Frame::default().with_label(&format!("{line1}\n{line2}"));
+        lines.set_label_size(12);
+        main.set_size(&lines, button_height);
 
-        //
-        // FIXME agregar texto explicativo de que son los min y max y el tema del texto
-        //
+        let sep = Frame::default();
+        main.set_size(&sep, 16);
 
+        let filters = Flex::default_fill().row();
         {
-            let left = Flex::default().column();
+            let mut left = Flex::default().column();
 
             self.create_input("kind", "Tipo de vivienda");
             self.create_input("number", "Número");
             self.create_input("floor", "Piso");
             self.create_input("postcode", "Código postal");
-            self.set_text_min_max();
+
+            let text = self.set_text_min_max();
+            left.set_size(&text, 12);
 
             left.end();
         }
-
         {
-            let right = Flex::default().column();
+            let mut right = Flex::default().column();
 
             self.create_input("street", "Calle");
             self.create_input("rooms", "Habitaciones");
             self.create_input("baths", "Baños");
             self.create_input("area", "Superficie (m²)");
-            self.set_text_min_max();
+
+            let text = self.set_text_min_max();
+            right.set_size(&text, 12);
 
             right.end();
         }
-
         filters.end();
+
+        let sep = Frame::default();
+        main.set_size(&sep, 16);
 
         {
             let buttons = Flex::default().row();
@@ -104,13 +113,14 @@ impl FilterDialog {
         self.window.end();
     }
 
-    fn set_text_min_max(&self) {
+    fn set_text_min_max(&self) -> Flex {
         let row = Flex::default().row();
         Frame::default();
         Frame::default();
-        Frame::default().with_label("Mínimo").set_label_size(12);
-        Frame::default().with_label("Máximo").set_label_size(12);
+        Frame::default().with_label("Mínimo").set_label_size(10);
+        Frame::default().with_label("Máximo").set_label_size(10);
         row.end();
+        row
     }
 
     fn create_input(&mut self, key: &str, text: &str) {
