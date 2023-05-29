@@ -87,6 +87,7 @@ impl Widget {
     pub fn get_text(&self, index: &str) -> String {
         let index: i32 = index.parse().unwrap();
         match self {
+            Self::Choice(w) => w.text(index).unwrap(),
             Self::Browser(w) => w.text(index).unwrap(),
             _ => panic!("unsupported operation"),
         }

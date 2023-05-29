@@ -6,7 +6,7 @@ use super::schema::houses;
 #[diesel(table_name = houses)]
 pub struct House {
     pub id: i32,
-    pub kind: String,
+    pub kind: String, // kind should be a FOREIGN KEY
     pub street: String,
     pub number: i32,
     pub floor: i32,
@@ -19,7 +19,7 @@ pub struct House {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = houses)]
 pub struct NewHouse {
-    pub kind: String,
+    pub kind: String, // kind should be a FOREIGN KEY
     pub street: String,
     pub number: i32,
     pub floor: i32,

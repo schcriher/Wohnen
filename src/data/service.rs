@@ -23,6 +23,7 @@ impl DAO for Service {
                 let houses: Vec<House> = convert_vector(houses);
                 Ok(houses)
             }
+            // TODO Errors should be better reported
             Err(_) => Err(Error),
         }
     }
@@ -35,16 +36,19 @@ impl DAO for Service {
                 let house: House = house.into();
                 Ok(house)
             }
+            // TODO Errors should be better reported
             Err(_) => Err(Error),
         }
     }
 
     fn update_house(&mut self, house: &House) -> Result<bool, Error> {
         let house: DbHouse = house.into();
+        // TODO Errors should be better reported
         self.repository.update(&house).map_err(|_| Error)
     }
 
     fn delete_house(&mut self, id: i32) -> Result<bool, Error> {
+        // TODO Errors should be better reported
         self.repository.delete(id).map_err(|_| Error)
     }
 }

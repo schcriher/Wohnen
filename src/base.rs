@@ -6,7 +6,7 @@ pub struct Error;
 
 pub const HOUSE_TYPES: &[&str] = &["Casa", "Loft", "Chalet", "Dúplex", "Apartamento"];
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct House {
     pub id: i32,
     pub kind: String,

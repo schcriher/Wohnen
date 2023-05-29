@@ -21,11 +21,9 @@ pub struct Repository {
 impl Repository {
     pub fn new() -> Self {
         dotenv().ok();
-
-        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-
+        let url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         Repository {
-            conn: SqliteConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url)),
+            conn: SqliteConnection::establish(&url).expect(&format!("Error connecting to {}", url)),
         }
     }
 
@@ -33,6 +31,7 @@ impl Repository {
         houses
             .order(id.asc())
             .load::<House>(&mut self.conn)
+            // TODO Errors should be better reported
             .map_err(RepositoryError::get)
     }
 
@@ -42,6 +41,7 @@ impl Repository {
             return houses
                 .order(id.desc())
                 .first(&mut self.conn)
+                // TODO Errors should be better reported
                 .map_err(RepositoryError::get);
         }
         Err(RepositoryError)
@@ -52,6 +52,7 @@ impl Repository {
         if result == Ok(1) {
             Ok(true)
         } else {
+            // TODO Errors should be better reported
             Err(RepositoryError)
         }
     }
@@ -61,6 +62,7 @@ impl Repository {
         if result == Ok(1) {
             Ok(true)
         } else {
+            // TODO Errors should be better reported
             Err(RepositoryError)
         }
     }

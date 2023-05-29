@@ -53,7 +53,10 @@ impl FilterDialog {
         let mut filters = Flex::default_fill().row();
         filters.set_margin(margin_size);
 
-        // TODO texto explicativo de que son los min y max y el tema del texto
+        //
+        // FIXME agregar texto explicativo de que son los min y max y el tema del texto
+        //
+
         {
             let left = Flex::default().column();
 

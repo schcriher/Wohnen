@@ -90,10 +90,11 @@ impl<'a> Gui<'a> {
 
         if w > sw || h > sh {
             let x = sx + (sw - 420) / 2;
-            let y = sy + (sh - 150) / 2;
+            let y = sy + (sh - 190) / 2;
             let line1 = format!("Esta aplicación fue diseñada para una");
-            let line2 = format!("ventana de {w}x{h} píxeles como mínimo");
-            let error = format!("𝐄𝐑𝐑𝐎𝐑\n{line1}\n{line2}");
+            let line2 = format!("pantalla de {w}x{h} píxeles como mínimo");
+            let line3 = format!("Detectado: {sw}x{sh} (área utilizable)");
+            let error = format!("𝗘𝗥𝗥𝗢𝗥\n{line1}\n{line2}\n\n{line3}");
             dialog::beep(dialog::BeepType::Error);
             dialog::alert(x, y, &error);
             panic!("{error}");
@@ -329,6 +330,7 @@ impl<'a> Gui<'a> {
     }
 
     fn clear_house(&mut self) {
+        self.hid_select = -1;
         for widget in self.inputs.values_mut() {
             widget.set("");
         }
@@ -375,11 +377,40 @@ impl<'a> Gui<'a> {
         button.active()
     }
 
+    fn current_is_new_house(&self) -> bool {
+        let input = self.get_widget("select");
+        let pos = input.get();
+        pos != "0" && input.get_text(&pos) == NEW_HOUSE
+    }
+
+    fn is_data_completed(&self) -> bool {
+        self.get_value("kind") != "-1"
+            && self.get_value("street") != ""
+            && self.get_value("number") != ""
+            && self.get_value("floor") != ""
+            && self.get_value("postcode") != ""
+            && self.get_value("rooms") != ""
+            && self.get_value("baths") != ""
+            && self.get_value("area") != ""
+    }
+
+    fn update_house(&self, house: &mut House) {
+        let kind = self.get_widget("kind");
+        house.kind = kind.get_text(&kind.get());
+        house.street = self.get_value("street");
+        house.number = self.get_value("number").parse::<i32>().unwrap();
+        house.floor = self.get_value("floor").parse::<i32>().unwrap();
+        house.postcode = self.get_value("postcode").parse::<i32>().unwrap();
+        house.rooms = self.get_value("rooms").parse::<i32>().unwrap();
+        house.baths = self.get_value("baths").parse::<i32>().unwrap();
+        house.area = self.get_value("area").parse::<f32>().unwrap();
+    }
+
     pub fn run(&mut self) {
         self.build();
-        self.fill_kind();
-        self.fill_select(Filter::default());
         self.set_buttons_new_save_delete(true, false, false);
+        self.fill_select(Filter::default());
+        self.fill_kind();
         self.win.show();
 
         while self.app.wait() {
@@ -392,21 +423,60 @@ impl<'a> Gui<'a> {
                     }
 
                     Action::Save => {
-                        self.set_buttons_new_save_delete(true, false, true);
+                        if self.is_data_completed() {
+                            if self.current_is_new_house() {
+                                let mut house = House::default();
+                                self.update_house(&mut house);
+                                // TODO The user should be informed of the result
+                                match self.dao.create_house(&house) {
+                                    Ok(house) => self.hid_select = house.id,
+                                    Err(_) => {}
+                                }
+                            } else {
+                                let house = self.houses.get(&self.hid_select).unwrap();
+                                let mut house = house.borrow_mut();
+                                self.update_house(&mut house);
+                                // TODO The user should be informed of the result
+                                match self.dao.update_house(&house) {
+                                    Ok(_) => {}
+                                    Err(_) => {}
+                                }
+                            }
+                            self.set_buttons_new_save_delete(true, false, true);
+                            // TODO A better option would be to update only Browser and BTreeMap
+                            self.fill_select(Filter::default()); // update delete button
+                        } else {
+                            //
+                            // FIXME: informar de fatos faltantes
+                            //
+                            println!("  FALTAN DATOS!!!");
+                        }
                     }
 
                     Action::Delete => {
+                        if let Some(house) = self.houses.get(&self.hid_select) {
+                            let house = house.borrow();
+                            // TODO The user should be informed of the result
+                            match self.dao.delete_house(house.id) {
+                                Ok(_) => {}
+                                Err(_) => {}
+                            }
+                        }
                         self.clear_house();
                         self.set_buttons_new_save_delete(true, false, false);
+                        // TODO A better option would be to update only Browser and BTreeMap
+                        self.fill_select(Filter::default()); // update delete button
                     }
 
                     Action::Select => {
                         if self.unsaved_changes() {
-                            // TODO: ask for save the changes
+                            //
+                            // FIXME: ask for save the changes
+                            //
                             println!("  Changed!!!");
                         }
 
-                        let input: &mut Widget = self.get_widget_mut("select");
+                        let input = self.get_widget_mut("select");
                         let pos = input.get();
                         let last = input.get_size();
                         if pos != last && input.get_text(&last) == NEW_HOUSE {
@@ -418,7 +488,8 @@ impl<'a> Gui<'a> {
                         } else {
                             self.clear_house();
                         }
-                        self.set_buttons_new_save_delete(true, false, selected);
+                        let not_new = !self.current_is_new_house();
+                        self.set_buttons_new_save_delete(!selected || not_new, false, not_new);
                     }
 
                     Action::Filter => {
@@ -454,7 +525,9 @@ impl<'a> Gui<'a> {
 
                     Action::Close => {
                         if self.unsaved_changes() {
-                            // TODO: ask for save the changes
+                            //
+                            // FIXME: ask for save the changes
+                            //
                             println!("  Changed!!!");
                         }
                         self.app.quit();

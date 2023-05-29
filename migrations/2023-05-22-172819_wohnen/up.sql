@@ -1,6 +1,6 @@
 CREATE TABLE houses (
   id          INTEGER     NOT NULL,
-  kind        TEXT        NOT NULL,
+  kind        TEXT        NOT NULL, -- kind should be a FOREIGN KEY
   street      TEXT        NOT NULL,
   number      INTEGER     NOT NULL,
   floor       INTEGER     NOT NULL,
