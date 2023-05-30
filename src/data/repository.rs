@@ -1,4 +1,7 @@
 use diesel::{prelude::*, result::Error, SqliteConnection as Conn};
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 use dotenvy::dotenv;
 use std::env;
@@ -14,6 +17,11 @@ impl RepositoryError {
     }
 }
 
+fn run_migrations(conn: &mut Conn) {
+    conn.run_pending_migrations(MIGRATIONS)
+        .expect("Failed to run migrations");
+}
+
 pub struct Repository {
     conn: Conn,
 }
@@ -22,9 +30,9 @@ impl Repository {
     pub fn new() -> Self {
         dotenv().ok();
         let url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        Repository {
-            conn: Conn::establish(&url).expect(&format!("Error connecting to {}", url)),
-        }
+        let mut conn = Conn::establish(&url).expect(&format!("Error connecting to {}", url));
+        run_migrations(&mut conn);
+        Repository { conn }
     }
 
     pub fn find_all(&mut self) -> Result<Vec<House>, RepositoryError> {
