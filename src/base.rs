@@ -1,6 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
-use strsim::jaro_winkler;
+use strsim::{jaro_winkler, sorensen_dice};
+use unidecode::unidecode;
 
 pub struct Error;
 
@@ -30,7 +31,11 @@ pub struct Text {
 
 impl Apply for Text {
     fn apply<U: Display>(&self, value: &U) -> bool {
-        self.text == "" || jaro_winkler(&self.text, &value.to_string()) > 0.69
+        let text1 = unidecode(&value.to_string().to_lowercase());
+        let text2 = unidecode(&self.text.to_owned().to_lowercase());
+        let jw = jaro_winkler(&text2, &text1);
+        let sd = sorensen_dice(&text2, &text1);
+        text2 == "" || text1.contains(&text2) || (jw + 1.5 * sd) / 2.5 > 0.7
     }
 }
 

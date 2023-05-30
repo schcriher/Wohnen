@@ -12,3 +12,4 @@ fltk = { version = "1.4.4", features = ["fltk-bundled"] }
 diesel = { version = "2.1.0", features = ["sqlite"] }
 dotenvy = "0.15.7"
 strsim = "0.10.0"
+unidecode = "0.3.0"
