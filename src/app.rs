@@ -1,9 +1,11 @@
 mod dialogs;
+mod utils;
 mod wrapper;
 
 use crate::base::{Filter, House, DAO, HOUSE_TYPES};
 
 use dialogs::{FilterDialog, MDButton, MessageDialog};
+use utils::test_positive_and_zero_number;
 use wrapper::Widget;
 
 use std::{
@@ -312,6 +314,10 @@ impl<'a> Gui<'a> {
         self.get_widget_mut(key).add(value);
     }
 
+    fn set_color(&mut self, key: &str, color: Color) {
+        self.get_widget_mut(key).set_color(color);
+    }
+
     fn fill_select(&mut self) {
         self.clear_house();
         self.houses.clear();
@@ -400,11 +406,18 @@ impl<'a> Gui<'a> {
         }
     }
 
-    fn reset_button_color(&mut self) {
+    fn reset_buttons_color(&mut self) {
         for button in self.buttons.values_mut() {
             button.set_color(Color::from_rgb(225, 225, 225));
-            button.redraw();
         }
+        self.win.redraw();
+    }
+
+    fn reset_inputs_color(&mut self) {
+        for input in self.inputs.values_mut() {
+            input.set_color(Color::from_rgb(200, 255, 200));
+        }
+        self.win.redraw();
     }
 
     fn set_buttons_new_save_delete(&mut self, new: bool, save: bool, delete: bool) {
@@ -413,24 +426,47 @@ impl<'a> Gui<'a> {
         self.set_button_status(Action::Delete, delete);
     }
 
+    fn current_nothing_selected(&self) -> bool {
+        let input = self.get_widget("select");
+        let idx = input.get();
+        idx == "0"
+    }
+
     fn current_is_new_house(&self) -> bool {
         let input = self.get_widget("select");
         let idx = input.get();
         idx != "0" && input.get_text(&idx) == NEW_HOUSE
     }
 
-    fn is_data_completed_and_correct(&self) -> bool {
-        //
-        // FIXME mejorar, los números no pueden ser negativos
-        //
-        self.get_value("kind") != "-1"
-            && self.get_value("street") != ""
-            && self.get_value("number") != ""
-            && self.get_value("floor") != ""
-            && self.get_value("postcode") != ""
-            && self.get_value("rooms") != ""
-            && self.get_value("baths") != ""
-            && self.get_value("area") != ""
+    fn is_data_field_completed_and_correct(&mut self) -> bool {
+        let keys = [
+            "kind", "street", "number", "floor", "postcode", "rooms", "baths", "area",
+        ];
+        let mut count = 0;
+        for key in keys {
+            count += if self.is_data_field_correct(key) { 1 } else { 0 };
+        }
+        self.win.redraw();
+        count == keys.len()
+    }
+
+    fn is_data_field_correct(&mut self, key: &str) -> bool {
+        if self.is_data_value_correct(key) {
+            self.set_color(key, Color::from_rgb(200, 255, 200));
+            true
+        } else {
+            self.set_color(key, Color::from_rgb(200, 50, 50));
+            false
+        }
+    }
+
+    fn is_data_value_correct(&self, key: &str) -> bool {
+        match key {
+            "kind" => self.get_value(key) != "-1",
+            "street" => self.get_value(key) != "",
+            "area" => test_positive_and_zero_number::<f32>(&self.get_value(key)),
+            _ => test_positive_and_zero_number::<i32>(&self.get_value(key)),
+        }
     }
 
     fn update_house(&self, house: &mut House) {
@@ -468,18 +504,19 @@ impl<'a> Gui<'a> {
 
         while self.app.wait() {
             if let Some(action) = self.receiver.recv() {
-                self.reset_button_color();
+                self.reset_buttons_color();
 
                 match action {
                     Action::New => {
                         self.clear_house();
                         self.set_new_house();
                         self.set_buttons_new_save_delete(false, false, false);
+                        self.reset_inputs_color();
                     }
 
                     Action::Save => {
-                        if self.is_data_completed_and_correct() {
-                            if self.current_is_new_house() {
+                        if self.is_data_field_completed_and_correct() {
+                            if self.current_nothing_selected() || self.current_is_new_house() {
                                 let mut house = House::default();
                                 self.update_house(&mut house);
                                 match self.dao.create_house(&house) {
@@ -537,6 +574,7 @@ impl<'a> Gui<'a> {
                         self.set_buttons_new_save_delete(true, false, false);
                         // TODO A better option would be to update only Browser and BTreeMap
                         self.fill_select(); // update delete button
+                        self.reset_inputs_color();
                     }
 
                     Action::Select => {
@@ -556,6 +594,7 @@ impl<'a> Gui<'a> {
                         }
                         let not_new = !self.current_is_new_house();
                         self.set_buttons_new_save_delete(!selected || not_new, false, selected && not_new);
+                        self.reset_inputs_color();
                     }
 
                     Action::Filter => {
@@ -575,16 +614,19 @@ impl<'a> Gui<'a> {
                         }
 
                         self.win.activate();
+                        self.reset_inputs_color();
                     }
 
                     Action::Unfilter => {
                         self.set_buttons_new_save_delete(true, false, false);
                         self.current_filter = Filter::default();
                         self.fill_select(); // update delete button
+                        self.reset_inputs_color();
                     }
 
                     Action::Change => {
                         self.set_button_status(Action::Save, true);
+                        self.is_data_field_completed_and_correct();
                     }
 
                     Action::Close => {

@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use fltk::{
     browser::HoldBrowser,
+    enums::Color,
     input::{FloatInput, Input, IntInput},
     menu::Choice,
     prelude::*,
@@ -51,6 +52,16 @@ impl Widget {
         self
     }
 
+    pub fn set_color(&mut self, color: Color) {
+        match self {
+            Self::TInput(w) => w.set_color(color),
+            Self::IInput(w) => w.set_color(color),
+            Self::FInput(w) => w.set_color(color),
+            Self::Choice(w) => w.set_color(color),
+            Self::Browser(w) => w.set_color(color),
+        }
+    }
+
     pub fn clear(&mut self) -> &Self {
         match self {
             Self::Choice(w) => w.clear(),
@@ -88,7 +99,7 @@ impl Widget {
         let index: i32 = index.parse().unwrap();
         match self {
             Self::Choice(w) => w.text(index).unwrap(),
-            Self::Browser(w) => w.text(index).unwrap(),
+            Self::Browser(w) => w.text(index).unwrap_or("".to_owned()), // can be deselected
             _ => panic!("unsupported operation"),
         }
     }
