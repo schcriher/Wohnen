@@ -1,4 +1,4 @@
-use super::{wrapper::Widget, BUTTON_HEIGHT, BUTTON_WIDTH, MARGIN_SIZE};
+use super::{wrapper::Widget, BUTTON_HEIGHT, BUTTON_WIDTH, HOVER_COLOR, MARGIN_SIZE, NORMAL_COLOR};
 use crate::base::{Filter, Range, HOUSE_TYPES};
 
 use std::collections::HashMap;
@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use fltk::{
     app::{self, channel, Receiver, Sender},
     button::Button,
-    enums::{Color, Event, Font, FrameType, Key},
+    enums::{Event, Font, FrameType, Key},
     frame::Frame,
     group::Flex,
     input::{FloatInput, Input, IntInput},
@@ -157,8 +157,7 @@ impl FilterDialog {
         let mut vec = Vec::new();
         match key {
             "kind" => {
-                let mut kind = Choice::default();
-                kind.set_selection_color(Color::from_hex(0x1b1b1b));
+                let kind = Choice::default();
                 vec.push(Widget::Choice(kind));
             }
             "street" => {
@@ -199,15 +198,15 @@ impl FilterDialog {
 
     fn create_button(&self, caption: &str) {
         let mut button = Button::default().with_label(caption);
-        button.set_color(Color::from_rgb(225, 225, 225));
+        button.set_color(NORMAL_COLOR);
         button.handle(move |b, ev| match ev {
             Event::Enter => {
-                b.set_color(Color::from_rgb(150, 150, 150));
+                b.set_color(HOVER_COLOR);
                 b.redraw();
                 true
             }
             Event::Leave => {
-                b.set_color(Color::from_rgb(225, 225, 225));
+                b.set_color(NORMAL_COLOR);
                 b.redraw();
                 true
             }
@@ -408,15 +407,15 @@ impl MessageDialog {
 
     fn create_button(&self, data: &MDButton) -> Button {
         let mut button = Button::default().with_label(&data.text);
-        button.set_color(Color::from_rgb(225, 225, 225));
+        button.set_color(NORMAL_COLOR);
         button.handle(move |b, ev| match ev {
             Event::Enter => {
-                b.set_color(Color::from_rgb(150, 150, 150));
+                b.set_color(HOVER_COLOR);
                 b.redraw();
                 true
             }
             Event::Leave => {
-                b.set_color(Color::from_rgb(225, 225, 225));
+                b.set_color(NORMAL_COLOR);
                 b.redraw();
                 true
             }

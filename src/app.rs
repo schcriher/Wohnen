@@ -29,11 +29,18 @@ use fltk::{
     prelude::*,
     window::DoubleWindow,
 };
+use fltk_theme::{color_themes, ColorTheme};
 
 pub const NEW_HOUSE: &str = "«nuevo»";
 pub const MARGIN_SIZE: i32 = 16;
 pub const BUTTON_WIDTH: i32 = 128;
 pub const BUTTON_HEIGHT: i32 = 32;
+
+pub const FOREGROUND_COLOR: Color = Color::from_rgb(190, 190, 190);
+pub const SELECTION_COLOR: Color = Color::from_rgb(13, 13, 13);
+pub const NORMAL_COLOR: Color = Color::from_rgb(23, 23, 23);
+pub const HOVER_COLOR: Color = Color::from_rgb(16, 16, 16);
+pub const ERROR_COLOR: Color = Color::from_rgb(86, 16, 16);
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum Action {
@@ -82,14 +89,17 @@ impl<'a> Gui<'a> {
     }
 
     fn build(&mut self) {
-        app::set_scheme(Scheme::Gtk);
-        app::set_background_color(170, 189, 206);
-        app::set_background2_color(200, 255, 200);
-        app::set_foreground_color(0, 0, 0);
-        app::set_selection_color(255, 160, 63);
-        app::set_inactive_color(130, 149, 166);
         app::set_font_size(16);
         app::set_visible_focus(false);
+        app::set_scheme(Scheme::Gtk);
+        let theme = ColorTheme::new(color_themes::BLACK_THEME);
+        theme.apply();
+
+        let (r, g, b) = FOREGROUND_COLOR.to_rgb();
+        app::set_foreground_color(r, g, b);
+
+        let (r, g, b) = SELECTION_COLOR.to_rgb();
+        app::set_selection_color(r, g, b);
 
         self.win.set_label("Wohnen - Schcriher");
 
@@ -138,7 +148,6 @@ impl<'a> Gui<'a> {
 
         {
             let mut select = HoldBrowser::default();
-            select.set_selection_color(Color::from_hex(0x1b1b1b));
             select.emit(self.sender, Action::Select);
             self.inputs.insert("select".to_owned(), Widget::Browser(select));
         }
@@ -228,20 +237,20 @@ impl<'a> Gui<'a> {
 
     fn create_button(&mut self, caption: &str, action: Action) {
         let mut button = Button::default().with_label(caption);
-        button.set_color(Color::from_rgb(225, 225, 225));
+        button.set_color(NORMAL_COLOR);
         button.emit(self.sender, action);
         button.handle(move |b, ev| match ev {
             Event::Enter => {
                 if b.active() {
-                    b.set_color(Color::from_rgb(150, 150, 150));
+                    b.set_color(HOVER_COLOR);
                 } else {
-                    b.set_color(Color::from_rgb(225, 225, 225));
+                    b.set_color(NORMAL_COLOR);
                 }
                 b.redraw();
                 true
             }
             Event::Leave => {
-                b.set_color(Color::from_rgb(225, 225, 225));
+                b.set_color(NORMAL_COLOR);
                 b.redraw();
                 true
             }
@@ -253,7 +262,7 @@ impl<'a> Gui<'a> {
     fn create_input(&mut self, key: &str, text: &str) {
         let row = Flex::default().row();
         Frame::default().with_label(text);
-        let widget = match key {
+        let mut widget = match key {
             "id" => {
                 let mut input = Input::default();
                 input.set_tooltip("Este es el ID en la base de datos");
@@ -264,7 +273,6 @@ impl<'a> Gui<'a> {
             }
             "kind" => {
                 let mut kind = Choice::default();
-                kind.set_selection_color(Color::from_hex(0x1b1b1b));
                 kind.emit(self.sender, Action::Change);
                 Widget::Choice(kind)
             }
@@ -290,6 +298,7 @@ impl<'a> Gui<'a> {
                 Widget::IInput(input)
             }
         };
+        widget.set_color(NORMAL_COLOR);
         row.end();
         self.inputs.insert(key.to_owned(), widget);
     }
@@ -405,14 +414,15 @@ impl<'a> Gui<'a> {
 
     fn reset_buttons_color(&mut self) {
         for button in self.buttons.values_mut() {
-            button.set_color(Color::from_rgb(225, 225, 225));
+            button.set_color(NORMAL_COLOR);
         }
         self.win.redraw();
     }
 
     fn reset_inputs_color(&mut self) {
         for input in self.inputs.values_mut() {
-            input.set_color(Color::from_rgb(200, 255, 200));
+            // HoldBrowser is ignored by wrapper::Widget::set_color()
+            input.set_color(NORMAL_COLOR);
         }
         self.win.redraw();
     }
@@ -449,10 +459,10 @@ impl<'a> Gui<'a> {
 
     fn is_data_field_correct(&mut self, key: &str) -> bool {
         if self.is_data_value_correct(key) {
-            self.set_color(key, Color::from_rgb(200, 255, 200));
+            self.set_color(key, NORMAL_COLOR);
             true
         } else {
-            self.set_color(key, Color::from_rgb(200, 50, 50));
+            self.set_color(key, ERROR_COLOR);
             false
         }
     }
@@ -555,6 +565,7 @@ impl<'a> Gui<'a> {
                     }
 
                     Action::Delete => {
+                        // TODO Should be asked if delete is desired
                         let key = self.hid_select;
                         match self.dao.delete_house(key) {
                             Ok(_) => {

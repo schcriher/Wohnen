@@ -126,6 +126,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fltk-theme"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31a35af4e0ef3c362684219328cdb60459b3b916b9c9e57750b2c7ad6bd6b61f"
+dependencies = [
+ "fltk",
+ "lazy_static",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -146,6 +156,12 @@ name = "itoa"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
+
+[[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libsqlite3-sys"
@@ -362,6 +378,7 @@ dependencies = [
  "diesel_migrations",
  "dotenvy",
  "fltk",
+ "fltk-theme",
  "strsim",
  "unidecode",
 ]

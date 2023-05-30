@@ -58,7 +58,7 @@ impl Widget {
             Self::IInput(w) => w.set_color(color),
             Self::FInput(w) => w.set_color(color),
             Self::Choice(w) => w.set_color(color),
-            Self::Browser(w) => w.set_color(color),
+            Self::Browser(_) => {}
         }
     }
 
