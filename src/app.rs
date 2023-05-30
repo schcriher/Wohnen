@@ -138,7 +138,7 @@ impl<'a> Gui<'a> {
             let mut select = HoldBrowser::default();
             select.set_selection_color(Color::from_hex(0x1b1b1b));
             select.emit(self.sender, Action::Select);
-            self.inputs.insert("select".to_string(), Widget::Browser(select));
+            self.inputs.insert("select".to_owned(), Widget::Browser(select));
         }
 
         left.end();
@@ -289,7 +289,7 @@ impl<'a> Gui<'a> {
             }
         };
         row.end();
-        self.inputs.insert(key.to_string(), widget);
+        self.inputs.insert(key.to_owned(), widget);
     }
 
     fn get_widget(&self, key: &str) -> &Widget {
@@ -451,15 +451,8 @@ impl<'a> Gui<'a> {
         let width = 360;
         let height = 200;
         let (x, y) = self.get_pos(width, height);
-        let mut dialog = MessageDialog::new(
-            x,
-            y,
-            width,
-            height,
-            title.to_string(),
-            message.to_string(),
-            buttons,
-        );
+        let mut dialog =
+            MessageDialog::new(x, y, width, height, title.to_owned(), message.to_owned(), buttons);
         let answer = dialog.run();
 
         self.win.activate();

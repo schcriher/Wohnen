@@ -194,7 +194,7 @@ impl FilterDialog {
             }
         }
         row.end();
-        self.inputs.insert(key.to_string(), vec);
+        self.inputs.insert(key.to_owned(), vec);
     }
 
     fn create_button(&self, caption: &str) {
@@ -255,9 +255,9 @@ impl FilterDialog {
         let widgets = self.inputs.get("kind").unwrap();
         let index = widgets[0].get().parse::<usize>().unwrap();
         filter.kind.text = if index == 0 {
-            "".to_string()
+            "".to_owned()
         } else {
-            HOUSE_TYPES[index - 1].to_string()
+            HOUSE_TYPES[index - 1].to_owned()
         };
 
         let widgets = self.inputs.get("street").unwrap();
@@ -296,7 +296,7 @@ pub struct MDButton {
 impl MDButton {
     pub fn new(text: &str, value: i32) -> Self {
         Self {
-            text: text.to_string(),
+            text: text.to_owned(),
             value,
         }
     }
