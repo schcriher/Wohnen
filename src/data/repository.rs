@@ -1,4 +1,4 @@
-use diesel::{prelude::*, result::Error, SqliteConnection};
+use diesel::{prelude::*, result::Error, SqliteConnection as Conn};
 
 use dotenvy::dotenv;
 use std::env;
@@ -9,13 +9,13 @@ use super::schema::houses::dsl::*;
 pub struct RepositoryError;
 
 impl RepositoryError {
-    pub fn get(_: Error) -> Self {
+    fn get(_: Error) -> Self {
         RepositoryError
     }
 }
 
 pub struct Repository {
-    pub conn: SqliteConnection,
+    conn: Conn,
 }
 
 impl Repository {
@@ -23,11 +23,12 @@ impl Repository {
         dotenv().ok();
         let url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         Repository {
-            conn: SqliteConnection::establish(&url).expect(&format!("Error connecting to {}", url)),
+            conn: Conn::establish(&url).expect(&format!("Error connecting to {}", url)),
         }
     }
 
     pub fn find_all(&mut self) -> Result<Vec<House>, RepositoryError> {
+        // TODO Pagination should be implemented
         houses
             .order(id.asc())
             .load::<House>(&mut self.conn)
@@ -36,7 +37,9 @@ impl Repository {
     }
 
     pub fn create(&mut self, new_house: &NewHouse) -> Result<House, RepositoryError> {
-        let result = diesel::insert_into(houses).values(new_house).execute(&mut self.conn);
+        let result = diesel::insert_into(houses)
+            .values(new_house)
+            .execute(&mut self.conn);
         if result == Ok(1) {
             return houses
                 .order(id.desc())
@@ -48,7 +51,9 @@ impl Repository {
     }
 
     pub fn update(&mut self, house: &House) -> Result<bool, RepositoryError> {
-        let result = diesel::update(houses.find(house.id)).set(house).execute(&mut self.conn);
+        let result = diesel::update(houses.find(house.id))
+            .set(house)
+            .execute(&mut self.conn);
         if result == Ok(1) {
             Ok(true)
         } else {

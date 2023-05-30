@@ -3,7 +3,7 @@ mod wrapper;
 
 use crate::base::{Filter, House, DAO, HOUSE_TYPES};
 
-use dialogs::FilterDialog;
+use dialogs::{FilterDialog, MDButton, MessageDialog};
 use wrapper::Widget;
 
 use std::{
@@ -18,7 +18,7 @@ use fltk::{
     browser::HoldBrowser,
     button::Button,
     dialog,
-    enums::{CallbackTrigger, Color, Event, Font, FrameType},
+    enums::{CallbackTrigger, Color, Event, Font, FrameType, Key},
     frame::Frame,
     group::Flex,
     image::SvgImage,
@@ -29,6 +29,9 @@ use fltk::{
 };
 
 pub const NEW_HOUSE: &str = "«nuevo»";
+pub const MARGIN_SIZE: i32 = 16;
+pub const BUTTON_WIDTH: i32 = 128;
+pub const BUTTON_HEIGHT: i32 = 32;
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum Action {
@@ -42,6 +45,8 @@ pub enum Action {
     Close,
 }
 
+// Rc<RefCell<···>> https://doc.rust-lang.org/book/ch15-05-interior-mutability.html
+
 pub struct Gui<'a> {
     app: App,
     win: DoubleWindow,
@@ -50,9 +55,10 @@ pub struct Gui<'a> {
     receiver: Receiver<Action>,
     inputs: HashMap<String, Widget>,
     idxhid: HashMap<String, i32>,
-    houses: BTreeMap<i32, Rc<RefCell<House>>>, // https://doc.rust-lang.org/book/ch15-05-interior-mutability.html
+    houses: BTreeMap<i32, Rc<RefCell<House>>>,
     buttons: HashMap<Action, Button>,
     hid_select: i32,
+    current_filter: Filter,
 }
 
 impl<'a> Gui<'a> {
@@ -69,6 +75,7 @@ impl<'a> Gui<'a> {
             houses: BTreeMap::new(),
             buttons: HashMap::new(),
             hid_select: -1,
+            current_filter: Filter::default(),
         }
     }
 
@@ -86,15 +93,18 @@ impl<'a> Gui<'a> {
 
         let (sx, sy, sw, sh) = app::screen_work_area(self.win.screen_num());
         let w = 900;
-        let h = 460;
+        let h = 500;
 
         if w > sw || h > sh {
             let x = sx + (sw - 420) / 2;
             let y = sy + (sh - 190) / 2;
-            let line1 = format!("Esta aplicación fue diseñada para una");
-            let line2 = format!("pantalla de {w}x{h} píxeles como mínimo");
-            let line3 = format!("Detectado: {sw}x{sh} (área utilizable)");
-            let error = format!("𝗘𝗥𝗥𝗢𝗥\n{line1}\n{line2}\n\n{line3}");
+            let error = format!(
+                "𝗘𝗥𝗥𝗢𝗥\n\
+                Esta aplicación fue diseñada para una\n\
+                pantalla de {w}x{h} píxeles como mínimo\n\
+                \n\
+                Detectado: {sw}x{sh} (área utilizable)"
+            );
             dialog::beep(dialog::BeepType::Error);
             dialog::alert(x, y, &error);
             panic!("{error}");
@@ -107,16 +117,13 @@ impl<'a> Gui<'a> {
 
         self.win.begin();
 
-        let margin_size = 10;
-        let button_height = 36;
-
         let mut main = Flex::default_fill().row();
-        main.set_margin(margin_size);
+        main.set_margin(MARGIN_SIZE);
 
         // --- LEFT ---------------------------------------------
 
         let mut left = Flex::default().column();
-        left.set_margin(margin_size);
+        left.set_margin(MARGIN_SIZE);
 
         {
             let row = Flex::default().row();
@@ -124,7 +131,7 @@ impl<'a> Gui<'a> {
             self.create_button("Filtrar", Action::Filter);
             self.create_button("Quitar Filtro", Action::Unfilter);
             row.end();
-            left.set_size(&row, button_height);
+            left.set_size(&row, BUTTON_HEIGHT);
         }
 
         {
@@ -139,15 +146,15 @@ impl<'a> Gui<'a> {
         // --- RIGHT --------------------------------------------
 
         let mut right = Flex::default().column();
-        right.set_margin(margin_size);
+        right.set_margin(MARGIN_SIZE);
 
         let mut title = Frame::default().with_label("Vivienda Seleccionada");
         title.set_label_font(Font::HelveticaBold);
-        title.set_label_size(22);
-        right.set_size(&title, button_height);
+        title.set_label_size(24);
+        right.set_size(&title, BUTTON_HEIGHT);
 
         let sep = Frame::default();
-        right.set_size(&sep, 5);
+        right.set_size(&sep, 8);
 
         self.create_input("id", "Número de registro");
         self.create_input("kind", "Tipo de vivienda");
@@ -160,7 +167,7 @@ impl<'a> Gui<'a> {
         self.create_input("area", "Superficie total (m²)");
 
         let sep = Frame::default();
-        right.set_size(&sep, 10);
+        right.set_size(&sep, 16);
 
         {
             let row = Flex::default().row();
@@ -168,7 +175,7 @@ impl<'a> Gui<'a> {
             self.create_button("Guardar", Action::Save);
             self.create_button("Salir", Action::Close);
             row.end();
-            right.set_size(&row, button_height);
+            right.set_size(&row, BUTTON_HEIGHT);
         }
 
         right.end();
@@ -182,6 +189,29 @@ impl<'a> Gui<'a> {
         let icon = include_bytes!("../assets/icon.svg");
         let icon = SvgImage::from_data(std::str::from_utf8(icon).unwrap()).unwrap();
         self.win.set_icon(Some(icon));
+
+        self.win.handle({
+            let sender = self.sender.clone();
+            move |_, ev| match ev {
+                Event::KeyDown => match app::event_key() {
+                    Key::Escape => {
+                        sender.send(Action::Close);
+                        true
+                    }
+                    _ => false,
+                },
+                _ => false,
+            }
+        });
+
+        self.win.set_callback({
+            let sender = self.sender.clone();
+            move |_| {
+                if app::event() == Event::Close {
+                    sender.send(Action::Close);
+                }
+            }
+        });
     }
 
     fn get_pos(&self, width: i32, height: i32) -> (i32, i32) {
@@ -224,6 +254,7 @@ impl<'a> Gui<'a> {
         let widget = match key {
             "id" => {
                 let mut input = Input::default();
+                input.set_tooltip("Este es el ID en la base de datos");
                 input.set_frame(FrameType::FlatBox);
                 input.set_readonly(true);
                 input.deactivate();
@@ -281,7 +312,7 @@ impl<'a> Gui<'a> {
         self.get_widget_mut(key).add(value);
     }
 
-    fn fill_select(&mut self, filter: Filter) {
+    fn fill_select(&mut self) {
         self.clear_house();
         self.houses.clear();
         self.idxhid.clear();
@@ -290,10 +321,11 @@ impl<'a> Gui<'a> {
         select.clear();
 
         let mut max = 0;
+        // TODO Pagination should be implemented
         if let Ok(houses) = self.dao.get_houses() {
             max = houses.len();
             for house in houses {
-                if filter.valid(&house) {
+                if self.current_filter.valid(&house) {
                     self.houses.insert(house.id, Rc::new(RefCell::new(house)));
                 }
             }
@@ -301,7 +333,10 @@ impl<'a> Gui<'a> {
 
         for (index, house) in self.houses.values().enumerate() {
             let house = house.borrow();
-            select.add(&format!("Vivienda {:>02}: {} ({})", house.id, house.street, house.kind));
+            select.add(&format!(
+                "Vivienda {:>02}: {} ({})",
+                house.id, house.street, house.kind
+            ));
             let idx = (index + 1).to_string();
             self.idxhid.insert(idx.clone(), house.id);
 
@@ -330,7 +365,6 @@ impl<'a> Gui<'a> {
     }
 
     fn clear_house(&mut self) {
-        self.hid_select = -1;
         for widget in self.inputs.values_mut() {
             widget.set("");
         }
@@ -366,24 +400,29 @@ impl<'a> Gui<'a> {
         }
     }
 
+    fn reset_button_color(&mut self) {
+        for button in self.buttons.values_mut() {
+            button.set_color(Color::from_rgb(225, 225, 225));
+            button.redraw();
+        }
+    }
+
     fn set_buttons_new_save_delete(&mut self, new: bool, save: bool, delete: bool) {
         self.set_button_status(Action::New, new);
         self.set_button_status(Action::Save, save);
         self.set_button_status(Action::Delete, delete);
     }
 
-    fn unsaved_changes(&self) -> bool {
-        let button = self.buttons.get(&Action::Save).unwrap();
-        button.active()
-    }
-
     fn current_is_new_house(&self) -> bool {
         let input = self.get_widget("select");
-        let pos = input.get();
-        pos != "0" && input.get_text(&pos) == NEW_HOUSE
+        let idx = input.get();
+        idx != "0" && input.get_text(&idx) == NEW_HOUSE
     }
 
-    fn is_data_completed(&self) -> bool {
+    fn is_data_completed_and_correct(&self) -> bool {
+        //
+        // FIXME mejorar, los números no pueden ser negativos
+        //
         self.get_value("kind") != "-1"
             && self.get_value("street") != ""
             && self.get_value("number") != ""
@@ -406,15 +445,38 @@ impl<'a> Gui<'a> {
         house.area = self.get_value("area").parse::<f32>().unwrap();
     }
 
+    fn open_message_dialog(&mut self, title: &str, message: &str, buttons: Vec<MDButton>) -> i32 {
+        self.win.deactivate();
+
+        let width = 360;
+        let height = 200;
+        let (x, y) = self.get_pos(width, height);
+        let mut dialog = MessageDialog::new(
+            x,
+            y,
+            width,
+            height,
+            title.to_string(),
+            message.to_string(),
+            buttons,
+        );
+        let answer = dialog.run();
+
+        self.win.activate();
+        answer
+    }
+
     pub fn run(&mut self) {
         self.build();
         self.set_buttons_new_save_delete(true, false, false);
-        self.fill_select(Filter::default());
+        self.fill_select();
         self.fill_kind();
         self.win.show();
 
         while self.app.wait() {
             if let Some(action) = self.receiver.recv() {
+                self.reset_button_color();
+
                 match action {
                     Action::New => {
                         self.clear_house();
@@ -423,80 +485,87 @@ impl<'a> Gui<'a> {
                     }
 
                     Action::Save => {
-                        if self.is_data_completed() {
+                        if self.is_data_completed_and_correct() {
                             if self.current_is_new_house() {
                                 let mut house = House::default();
                                 self.update_house(&mut house);
-                                // TODO The user should be informed of the result
                                 match self.dao.create_house(&house) {
                                     Ok(house) => self.hid_select = house.id,
-                                    Err(_) => {}
+                                    Err(_) => {
+                                        self.open_message_dialog(
+                                            "Error",
+                                            "No se pudo guardar la vivienda",
+                                            vec![MDButton::new("Aceptar", 0)],
+                                        );
+                                    }
                                 }
                             } else {
-                                let house = self.houses.get(&self.hid_select).unwrap();
+                                let houses = self.houses.clone();
+                                let house = houses.get(&self.hid_select).unwrap();
                                 let mut house = house.borrow_mut();
                                 self.update_house(&mut house);
-                                // TODO The user should be informed of the result
                                 match self.dao.update_house(&house) {
                                     Ok(_) => {}
-                                    Err(_) => {}
+                                    Err(_) => {
+                                        self.open_message_dialog(
+                                            "Error",
+                                            "No se pudo guardar la vivienda",
+                                            vec![MDButton::new("Aceptar", 0)],
+                                        );
+                                    }
                                 }
                             }
-                            self.set_buttons_new_save_delete(true, false, true);
+                            self.set_button_status(Action::Save, false);
                             // TODO A better option would be to update only Browser and BTreeMap
-                            self.fill_select(Filter::default()); // update delete button
+                            self.fill_select(); // update delete button
                         } else {
-                            //
-                            // FIXME: informar de fatos faltantes
-                            //
-                            println!("  FALTAN DATOS!!!");
+                            self.open_message_dialog(
+                                "Error",
+                                "Los datos cargados contienen errores\nverifíquelos para continuar",
+                                vec![MDButton::new("Aceptar", 0)],
+                            );
                         }
                     }
 
                     Action::Delete => {
-                        if let Some(house) = self.houses.get(&self.hid_select) {
-                            let house = house.borrow();
-                            // TODO The user should be informed of the result
-                            match self.dao.delete_house(house.id) {
-                                Ok(_) => {}
-                                Err(_) => {}
+                        let key = self.hid_select;
+                        match self.dao.delete_house(key) {
+                            Ok(_) => {
+                                self.hid_select = -1;
+                            }
+                            Err(_) => {
+                                self.open_message_dialog(
+                                    "Error",
+                                    "No se pudo borrar la vivienda",
+                                    vec![MDButton::new("Aceptar", 0)],
+                                );
                             }
                         }
-                        self.clear_house();
                         self.set_buttons_new_save_delete(true, false, false);
                         // TODO A better option would be to update only Browser and BTreeMap
-                        self.fill_select(Filter::default()); // update delete button
+                        self.fill_select(); // update delete button
                     }
 
                     Action::Select => {
-                        if self.unsaved_changes() {
-                            //
-                            // FIXME: ask for save the changes
-                            //
-                            println!("  Changed!!!");
-                        }
+                        // TODO Should be checked if there are unsaved changes to ask what to do
 
                         let input = self.get_widget_mut("select");
-                        let pos = input.get();
+                        let idx = input.get();
                         let last = input.get_size();
-                        if pos != last && input.get_text(&last) == NEW_HOUSE {
+                        if idx != last && input.get_text(&last) == NEW_HOUSE {
                             input.del(&last);
                         }
-                        let selected = pos != "0";
+                        let selected = idx != "0";
                         if selected {
                             self.show_house();
                         } else {
                             self.clear_house();
                         }
                         let not_new = !self.current_is_new_house();
-                        self.set_buttons_new_save_delete(!selected || not_new, false, not_new);
+                        self.set_buttons_new_save_delete(!selected || not_new, false, selected && not_new);
                     }
 
                     Action::Filter => {
-                        let button = self.buttons.get_mut(&Action::Filter).unwrap();
-                        button.set_color(Color::from_rgb(225, 225, 225));
-                        button.redraw();
-
                         self.win.deactivate();
 
                         let width = 800;
@@ -508,7 +577,8 @@ impl<'a> Gui<'a> {
 
                         self.set_buttons_new_save_delete(true, false, false);
                         if let Some(filter) = filter {
-                            self.fill_select(filter); // update delete button
+                            self.current_filter = filter;
+                            self.fill_select(); // update delete button
                         }
 
                         self.win.activate();
@@ -516,7 +586,8 @@ impl<'a> Gui<'a> {
 
                     Action::Unfilter => {
                         self.set_buttons_new_save_delete(true, false, false);
-                        self.fill_select(Filter::default()); // update delete button
+                        self.current_filter = Filter::default();
+                        self.fill_select(); // update delete button
                     }
 
                     Action::Change => {
@@ -524,12 +595,7 @@ impl<'a> Gui<'a> {
                     }
 
                     Action::Close => {
-                        if self.unsaved_changes() {
-                            //
-                            // FIXME: ask for save the changes
-                            //
-                            println!("  Changed!!!");
-                        }
+                        // TODO Should be checked if there are unsaved changes to ask what to do
                         self.app.quit();
                     }
                 }

@@ -7,7 +7,7 @@ use fltk::{
     prelude::*,
 };
 
-// https://users.rust-lang.org/t/how-to-create-a-vector-with-different-types-of-gui-widgets/93414/2
+// https://users.rust-lang.org/t/how-to-create-a-vector-with-different-types-of-gui-widgets
 
 #[derive(Debug)]
 pub enum Widget {
