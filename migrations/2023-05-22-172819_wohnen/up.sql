@@ -18,7 +18,7 @@ VALUES
 ("Apartamento", "Avenida Bustamante",      1456, 4, 4321, 2, 1,  80.2),
 ("Dúplex",      "Calle San Martin",         456, 3, 4321, 3, 1, 120.6),
 ("Casa",        "Calle Cabo de Hornos",    2859, 2, 1758, 4, 2, 200.8),
-("Loft",        "Avenida Bernardo Lehman",  789, 5, 8765, 2, 1,  75.2),
+("Loft",        "Av. Bernardo Lehman",      789, 5, 8765, 2, 1,  75.2),
 ("Chalet",      "Calle los Pinos",          334, 1, 5678, 6, 2, 280.0),
 ("Apartamento", "Calle Müller",             756, 6, 3456, 2, 1,  60.3),
 ("Loft",        "Avenida Chacabuco",        567, 7, 3452, 2, 1,  85.8),

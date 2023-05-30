@@ -339,10 +339,7 @@ impl<'a> Gui<'a> {
 
         for (index, house) in self.houses.values().enumerate() {
             let house = house.borrow();
-            select.add(&format!(
-                "Vivienda {:>02}: {} ({})",
-                house.id, house.street, house.kind
-            ));
+            select.add(&format!("{} al {}", house.street, house.number));
             let idx = (index + 1).to_string();
             self.idxhid.insert(idx.clone(), house.id);
 
